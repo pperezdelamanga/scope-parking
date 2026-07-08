@@ -228,6 +228,46 @@
     text-align:center; font-family:'JetBrains Mono', monospace; font-size:12px;
     color: var(--muted); margin-bottom: 18px;
   }
+
+  .day-tabs{
+    display:flex;
+    gap: 6px;
+    overflow-x: auto;
+    padding-bottom: 8px;
+    margin-bottom: 20px;
+    scrollbar-width: thin;
+  }
+  .day-tab{
+    flex: 0 0 auto;
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    gap: 2px;
+    padding: 10px 14px;
+    border-radius: 8px;
+    border: 1px solid rgba(238,236,230,.18);
+    background: var(--asphalt-panel);
+    color: var(--muted);
+    font-family:'Inter';
+    cursor:pointer;
+    min-width: 62px;
+  }
+  .day-tab .day-tab-name{
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: .5px;
+  }
+  .day-tab .day-tab-date{
+    font-family:'JetBrains Mono', monospace;
+    font-size: 11px;
+  }
+  .day-tab.today{ border-color: var(--line-yellow); }
+  .day-tab.active{
+    background: var(--line-yellow);
+    border-color: var(--line-yellow);
+    color: var(--asphalt);
+  }
+  .day-tab.active .day-tab-name, .day-tab.active .day-tab-date{ color: var(--asphalt); }
 </style>
 </head>
 <body>
@@ -247,6 +287,8 @@
   </div>
 
   <div class="status-banner" id="connBanner">conectando…</div>
+
+  <div class="day-tabs" id="dayTabs"></div>
 
   <div class="grid" id="grid"></div>
 
@@ -309,10 +351,50 @@ function isoWeekKey(date = new Date()){
   return `${d.getUTCFullYear()}-W${String(weekNo).padStart(2,'0')}`;
 }
 
+/* Fecha (YYYY-MM-DD) del lunes de la semana actual, en horario local */
+function mondayOfCurrentWeek(date = new Date()){
+  const d = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+  const dayNum = d.getDay() || 7; // lunes=1 ... domingo=7
+  d.setDate(d.getDate() - (dayNum - 1));
+  return d;
+}
+
+function toDateKey(d){
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+}
+
+const DAY_LABELS = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"];
+const DAY_LABELS_SHORT = ["LUN", "MAR", "MIÉ", "JUE", "VIE", "SÁB", "DOM"];
+
+/* Devuelve un array de 7 objetos {key, label, shortLabel, dateLabel} para la semana actual */
+function currentWeekDays(){
+  const monday = mondayOfCurrentWeek();
+  const days = [];
+  for(let i = 0; i < 7; i++){
+    const d = new Date(monday);
+    d.setDate(monday.getDate() + i);
+    days.push({
+      key: toDateKey(d),
+      label: DAY_LABELS[i],
+      shortLabel: DAY_LABELS_SHORT[i],
+      dateLabel: `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}`
+    });
+  }
+  return days;
+}
+
 function defaultSpotsObject(){
   const obj = {};
   DEFAULT_SPOTS.forEach(s => {
     obj[s.num] = { owner: s.owner, occupiedBy: s.owner, free: false };
+  });
+  return obj;
+}
+
+function defaultDaysObject(){
+  const obj = {};
+  currentWeekDays().forEach(day => {
+    obj[day.key] = { spots: defaultSpotsObject() };
   });
   return obj;
 }
@@ -345,12 +427,13 @@ document.getElementById("changeMeBtn").addEventListener("click", askName);
 if(!me){ askName(); } else { meLabel.textContent = me; closeModal(); }
 
 /* Asegura que exista el nodo y gestiona el reset semanal mediante transacción
-   (evita condiciones de carrera si varias personas abren la app a la vez) */
+   (evita condiciones de carrera si varias personas abren la app a la vez).
+   Cada semana se generan los 7 días con las plazas por defecto. */
 function ensureWeekAndSpots(){
   const currentWeek = isoWeekKey();
   parkingRef.transaction(current => {
     if(!current || current.week !== currentWeek){
-      return { week: currentWeek, spots: defaultSpotsObject() };
+      return { week: currentWeek, days: defaultDaysObject() };
     }
     return current; // sin cambios, ya está al día
   });
@@ -360,8 +443,11 @@ ensureWeekAndSpots();
 
 /* Render */
 const grid = document.getElementById("grid");
+const dayTabsEl = document.getElementById("dayTabs");
 const weekTag = document.getElementById("weekTag");
 const connBanner = document.getElementById("connBanner");
+
+let selectedDayKey = null;
 
 db.ref(".info/connected").on("value", snap => {
   connBanner.textContent = snap.val() ? "sincronizado en tiempo real" : "sin conexión — reintentando…";
@@ -373,12 +459,55 @@ parkingRef.on("value", snapshot => {
 
   weekTag.textContent = "SEMANA " + (data.week || "—").replace("-W", " · ");
 
+  const days = currentWeekDays();
+  const todayKey = toDateKey(new Date());
+
+  // Si no hay día seleccionado o ya no existe en esta semana, elige hoy (si está en la lista) o el lunes
+  if(!selectedDayKey || !days.some(d => d.key === selectedDayKey)){
+    selectedDayKey = days.some(d => d.key === todayKey) ? todayKey : days[0].key;
+  }
+
+  renderDayTabs(days, todayKey);
+
+  const daySpots = (data.days && data.days[selectedDayKey] && data.days[selectedDayKey].spots) || defaultSpotsObject();
   grid.innerHTML = "";
   DEFAULT_SPOTS.forEach(defSpot => {
-    const spot = (data.spots && data.spots[defSpot.num]) || { owner: defSpot.owner, occupiedBy: defSpot.owner, free: false };
+    const spot = daySpots[defSpot.num] || { owner: defSpot.owner, occupiedBy: defSpot.owner, free: false };
     grid.appendChild(renderSpot(defSpot.num, spot));
   });
 });
+
+function renderDayTabs(days, todayKey){
+  dayTabsEl.innerHTML = "";
+  days.forEach(day => {
+    const btn = document.createElement("button");
+    btn.className = "day-tab" + (day.key === selectedDayKey ? " active" : "") + (day.key === todayKey ? " today" : "");
+    btn.dataset.key = day.key;
+    btn.innerHTML = `<span class="day-tab-name">${day.shortLabel}</span><span class="day-tab-date">${day.dateLabel}</span>`;
+    dayTabsEl.appendChild(btn);
+  });
+}
+
+dayTabsEl.addEventListener("click", e => {
+  const btn = e.target.closest(".day-tab");
+  if(!btn) return;
+  selectedDayKey = btn.dataset.key;
+  // Volvemos a pedir el snapshot actual para repintar con el nuevo día seleccionado
+  parkingRef.once("value").then(snapshot => {
+    const data = snapshot.val();
+    if(!data) return;
+    const days = currentWeekDays();
+    const todayKey = toDateKey(new Date());
+    renderDayTabs(days, todayKey);
+    const daySpots = (data.days && data.days[selectedDayKey] && data.days[selectedDayKey].spots) || defaultSpotsObject();
+    grid.innerHTML = "";
+    DEFAULT_SPOTS.forEach(defSpot => {
+      const spot = daySpots[defSpot.num] || { owner: defSpot.owner, occupiedBy: defSpot.owner, free: false };
+      grid.appendChild(renderSpot(defSpot.num, spot));
+    });
+  });
+});
+
 
 function renderSpot(num, spot){
   const el = document.createElement("div");
@@ -422,11 +551,12 @@ grid.addEventListener("click", e => {
 
   // Si se libera la plaza de otra persona, pedimos confirmación para evitar toques accidentales
   if(action === "release" && btn.dataset.holder){
-    const ok = confirm(`¿Seguro que quieres liberar la plaza ${num}, asignada a ${btn.dataset.holder}?`);
+    const dayLabel = currentWeekDays().find(d => d.key === selectedDayKey);
+    const ok = confirm(`¿Seguro que quieres liberar la plaza ${num} (${dayLabel ? dayLabel.label : ""}), asignada a ${btn.dataset.holder}?`);
     if(!ok) return;
   }
 
-  const spotRef = db.ref("parking/spots/" + num);
+  const spotRef = db.ref(`parking/days/${selectedDayKey}/spots/${num}`);
 
   spotRef.transaction(current => {
     if(!current) return current;
