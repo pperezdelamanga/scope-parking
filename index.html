@@ -1,0 +1,452 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Plazas de garaje</title>
+
+<!-- PWA: instalación en móvil -->
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#26282c">
+<link rel="icon" href="icon-192.png" type="image/png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Parking">
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500;600&display=swap" rel="stylesheet">
+
+<style>
+  :root{
+    --asphalt: #26282c;
+    --asphalt-light: #323539;
+    --asphalt-panel: #2e3034;
+    --line-white: #eeece6;
+    --line-yellow: #f4c430;
+    --free-green: #4c9a6a;
+    --free-green-glow: rgba(76,154,106,.35);
+    --cone-orange: #e0703a;
+    --muted: #9a9d9f;
+    --danger: #c2564f;
+  }
+
+  *{ box-sizing:border-box; }
+
+  body{
+    margin:0;
+    background:
+      repeating-linear-gradient(0deg, transparent 0 78px, rgba(255,255,255,.02) 78px 80px),
+      var(--asphalt);
+    color: var(--line-white);
+    font-family: 'Inter', sans-serif;
+    min-height:100vh;
+    padding: 32px 20px 80px;
+  }
+
+  .wrap{ max-width: 980px; margin: 0 auto; }
+
+  header{
+    display:flex;
+    justify-content:space-between;
+    align-items:flex-end;
+    flex-wrap:wrap;
+    gap:16px;
+    border-bottom: 4px dashed rgba(238,236,230,.25);
+    padding-bottom: 20px;
+    margin-bottom: 36px;
+  }
+
+  .title-block{ display:flex; align-items:center; gap:14px; }
+
+  .p-badge{
+    width:56px; height:56px;
+    border: 4px solid var(--line-yellow);
+    border-radius: 8px;
+    display:flex; align-items:center; justify-content:center;
+    font-family:'Bebas Neue', sans-serif;
+    font-size: 34px;
+    color: var(--line-yellow);
+    flex-shrink:0;
+  }
+
+  h1{
+    font-family:'Bebas Neue', sans-serif;
+    font-weight:400;
+    letter-spacing: 1px;
+    font-size: 30px;
+    margin:0;
+    line-height:1;
+  }
+  h1 span{ color: var(--muted); font-size: 16px; font-family:'Inter'; display:block; margin-top:6px; letter-spacing:0; font-weight:500;}
+
+  .week-tag{
+    font-family:'JetBrains Mono', monospace;
+    font-size: 13px;
+    color: var(--asphalt);
+    background: var(--line-yellow);
+    padding: 8px 14px;
+    border-radius: 4px;
+    font-weight:600;
+    letter-spacing: .5px;
+  }
+
+  .me-bar{
+    display:flex; align-items:center; gap:10px;
+    font-size: 14px;
+    color: var(--muted);
+    margin-bottom: 28px;
+  }
+  .me-bar b{ color: var(--line-white); }
+  .me-bar button{
+    background:none; border:1px solid rgba(238,236,230,.25);
+    color: var(--muted); font-size:12px; padding: 5px 10px;
+    border-radius: 4px; cursor:pointer; font-family:'Inter';
+  }
+  .me-bar button:hover{ border-color: var(--line-white); color:var(--line-white); }
+
+  .grid{
+    display:grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 0;
+    background: var(--line-white);
+    padding: 3px;
+    border-radius: 10px;
+  }
+  @media (max-width: 720px){ .grid{ grid-template-columns: repeat(2, 1fr); } }
+  @media (max-width: 460px){ .grid{ grid-template-columns: 1fr; } }
+
+  .spot{
+    background: var(--asphalt-panel);
+    border: 2px dashed rgba(238,236,230,.3);
+    padding: 26px 20px 22px;
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    text-align:center;
+    gap: 10px;
+    position:relative;
+    transition: background .25s ease;
+  }
+
+  .spot.free{
+    background: linear-gradient(180deg, rgba(76,154,106,.16), rgba(76,154,106,.05));
+  }
+
+  .spot-num{
+    font-family:'Bebas Neue', sans-serif;
+    font-size: 64px;
+    line-height: .9;
+    color: var(--line-white);
+    letter-spacing: 1px;
+  }
+  .spot.free .spot-num{ color: var(--free-green); }
+
+  .spot-owner-label{
+    font-size: 11px;
+    text-transform:uppercase;
+    letter-spacing: 1.2px;
+    color: var(--muted);
+  }
+
+  .spot-holder{
+    font-size: 18px;
+    font-weight:600;
+    color: var(--line-white);
+    min-height: 24px;
+  }
+
+  .status-pill{
+    font-family:'JetBrains Mono', monospace;
+    font-size: 11px;
+    padding: 4px 10px;
+    border-radius: 100px;
+    letter-spacing: .5px;
+  }
+  .status-pill.occupied{ background: rgba(255,255,255,.08); color: var(--muted); }
+  .status-pill.free{ background: var(--free-green); color: #0d1a12; font-weight:700; box-shadow: 0 0 0 4px var(--free-green-glow); }
+  .status-pill.mine{ background: var(--line-yellow); color: var(--asphalt); font-weight:700; }
+
+  .spot button.action{
+    margin-top: 6px;
+    border:none;
+    padding: 10px 18px;
+    border-radius: 6px;
+    font-family:'Inter';
+    font-weight:600;
+    font-size: 13px;
+    cursor:pointer;
+    width: 100%;
+    transition: transform .1s ease, filter .15s ease;
+  }
+  .spot button.action:hover{ filter: brightness(1.08); }
+  .spot button.action:active{ transform: scale(.97); }
+
+  .btn-release{ background: var(--cone-orange); color: #2a1206; }
+  .btn-claim{ background: var(--free-green); color: #0d1a12; }
+  .btn-disabled{ background: rgba(255,255,255,.06); color: var(--muted); cursor:not-allowed; }
+
+  footer{
+    text-align:center;
+    margin-top: 40px;
+    font-size: 12px;
+    color: var(--muted);
+    font-family:'JetBrains Mono', monospace;
+  }
+
+  /* Modal para elegir nombre */
+  .modal-overlay{
+    position:fixed; inset:0; background: rgba(0,0,0,.6);
+    display:flex; align-items:center; justify-content:center;
+    z-index: 50; padding:20px;
+  }
+  .modal{
+    background: var(--asphalt-light);
+    border: 2px solid var(--line-yellow);
+    border-radius: 10px;
+    padding: 28px;
+    max-width: 360px;
+    width:100%;
+  }
+  .modal h2{ font-family:'Bebas Neue'; font-size:24px; margin: 0 0 6px; font-weight:400; letter-spacing:.5px; }
+  .modal p{ color: var(--muted); font-size: 13px; margin: 0 0 18px; }
+  .modal input{
+    width:100%; padding: 12px; border-radius:6px; border: 1px solid rgba(238,236,230,.2);
+    background: var(--asphalt); color: var(--line-white); font-family:'Inter'; font-size:15px;
+    margin-bottom: 14px;
+  }
+  .modal input:focus{ outline: 2px solid var(--line-yellow); }
+  .modal button{
+    width:100%; padding: 12px; border:none; border-radius:6px;
+    background: var(--line-yellow); color: var(--asphalt); font-weight:700; cursor:pointer; font-size:14px;
+  }
+
+  .hidden{ display:none !important; }
+
+  .status-banner{
+    text-align:center; font-family:'JetBrains Mono', monospace; font-size:12px;
+    color: var(--muted); margin-bottom: 18px;
+  }
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <header>
+    <div class="title-block">
+      <div class="p-badge">P</div>
+      <h1>Plazas de garaje<span>Cristina · Nacho · Sergio · Juanma · Ángela · Furgo</span></h1>
+    </div>
+    <div class="week-tag" id="weekTag">SEMANA —</div>
+  </header>
+
+  <div class="me-bar">
+    Conectado como <b id="meLabel">—</b>
+    <button id="changeMeBtn">cambiar</button>
+  </div>
+
+  <div class="status-banner" id="connBanner">conectando…</div>
+
+  <div class="grid" id="grid"></div>
+
+  <footer>se reinicia automáticamente cada semana a las plazas por defecto</footer>
+</div>
+
+<div class="modal-overlay" id="modalOverlay">
+  <div class="modal">
+    <h2>¿Quién eres?</h2>
+    <p>Se recordará en este navegador. Si tienes una plaza asignada por defecto, escribe tu nombre tal cual aparece en tu plaza.</p>
+    <input type="text" id="nameInput" placeholder="Tu nombre" autocomplete="off">
+    <button id="nameSubmit">Entrar</button>
+  </div>
+</div>
+
+<!-- Firebase (compat SDK, sin build) -->
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
+
+<script>
+/* =========================================================
+   1) CONFIGURA AQUÍ TU PROYECTO DE FIREBASE
+   Sustituye estos valores por los de tu propio proyecto
+   (Firebase Console → Configuración del proyecto → SDK setup)
+   ========================================================= */
+const firebaseConfig = {
+  apiKey: "AIzaSyAqo9zQ0FxYffGm891i9eULjbaI6YSu0F4",
+  authDomain: "scope-parking.firebaseapp.com",
+  databaseURL: "https://scope-parking-default-rtdb.europe-west1.firebasedatabase.app",
+  projectId: "scope-parking",
+  storageBucket: "scope-parking.firebasestorage.app",
+  messagingSenderId: "168854650652",
+  appId: "1:168854650652:web:a2d6ad99726df5043304d9"
+};
+
+/* =========================================================
+   2) Plazas por defecto — edítalas aquí si cambian los dueños
+   ========================================================= */
+const DEFAULT_SPOTS = [
+  { num: 65, owner: "Cristina" },
+  { num: 66, owner: "Nacho" },
+  { num: 69, owner: "Sergio" },
+  { num: 70, owner: "Juanma" },
+  { num: 78, owner: "Ángela" },
+  { num: 79, owner: "Furgo" }
+];
+
+/* ===================== Lógica de la app ===================== */
+
+firebase.initializeApp(firebaseConfig);
+const db = firebase.database();
+const parkingRef = db.ref("parking");
+
+function isoWeekKey(date = new Date()){
+  const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
+  const dayNum = d.getUTCDay() || 7;
+  d.setUTCDate(d.getUTCDate() + 4 - dayNum);
+  const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+  const weekNo = Math.ceil((((d - yearStart) / 86400000) + 1) / 7);
+  return `${d.getUTCFullYear()}-W${String(weekNo).padStart(2,'0')}`;
+}
+
+function defaultSpotsObject(){
+  const obj = {};
+  DEFAULT_SPOTS.forEach(s => {
+    obj[s.num] = { owner: s.owner, occupiedBy: s.owner, free: false };
+  });
+  return obj;
+}
+
+/* Identidad local */
+let me = localStorage.getItem("parking_me") || "";
+
+const modalOverlay = document.getElementById("modalOverlay");
+const nameInput = document.getElementById("nameInput");
+const meLabel = document.getElementById("meLabel");
+
+function askName(){
+  modalOverlay.classList.remove("hidden");
+  nameInput.value = me || "";
+  nameInput.focus();
+}
+function closeModal(){ modalOverlay.classList.add("hidden"); }
+
+document.getElementById("nameSubmit").addEventListener("click", () => {
+  const val = nameInput.value.trim();
+  if(!val) return;
+  me = val;
+  localStorage.setItem("parking_me", me);
+  meLabel.textContent = me;
+  closeModal();
+});
+nameInput.addEventListener("keydown", e => { if(e.key === "Enter") document.getElementById("nameSubmit").click(); });
+document.getElementById("changeMeBtn").addEventListener("click", askName);
+
+if(!me){ askName(); } else { meLabel.textContent = me; closeModal(); }
+
+/* Asegura que exista el nodo y gestiona el reset semanal mediante transacción
+   (evita condiciones de carrera si varias personas abren la app a la vez) */
+function ensureWeekAndSpots(){
+  const currentWeek = isoWeekKey();
+  parkingRef.transaction(current => {
+    if(!current || current.week !== currentWeek){
+      return { week: currentWeek, spots: defaultSpotsObject() };
+    }
+    return current; // sin cambios, ya está al día
+  });
+}
+
+ensureWeekAndSpots();
+
+/* Render */
+const grid = document.getElementById("grid");
+const weekTag = document.getElementById("weekTag");
+const connBanner = document.getElementById("connBanner");
+
+db.ref(".info/connected").on("value", snap => {
+  connBanner.textContent = snap.val() ? "sincronizado en tiempo real" : "sin conexión — reintentando…";
+});
+
+parkingRef.on("value", snapshot => {
+  const data = snapshot.val();
+  if(!data) return;
+
+  weekTag.textContent = "SEMANA " + (data.week || "—").replace("-W", " · ");
+
+  grid.innerHTML = "";
+  DEFAULT_SPOTS.forEach(defSpot => {
+    const spot = (data.spots && data.spots[defSpot.num]) || { owner: defSpot.owner, occupiedBy: defSpot.owner, free: false };
+    grid.appendChild(renderSpot(defSpot.num, spot));
+  });
+});
+
+function renderSpot(num, spot){
+  const el = document.createElement("div");
+  el.className = "spot" + (spot.free ? " free" : "");
+
+  const isMine = !spot.free && spot.occupiedBy === me;
+
+  let pillHtml, actionHtml, holderText;
+
+  if(spot.free){
+    holderText = "Libre";
+    pillHtml = `<span class="status-pill free">disponible</span>`;
+    actionHtml = `<button class="action btn-claim" data-num="${num}" data-action="claim">Ocupar esta plaza</button>`;
+  } else if(isMine){
+    holderText = spot.occupiedBy;
+    pillHtml = `<span class="status-pill mine">tu plaza</span>`;
+    actionHtml = `<button class="action btn-release" data-num="${num}" data-action="release">Liberar plaza</button>`;
+  } else {
+    holderText = spot.occupiedBy;
+    pillHtml = `<span class="status-pill occupied">ocupada</span>`;
+    actionHtml = `<button class="action btn-disabled" disabled>Ocupada</button>`;
+  }
+
+  el.innerHTML = `
+    <div class="spot-owner-label">Plaza fija de ${spot.owner}</div>
+    <div class="spot-num">${num}</div>
+    <div class="spot-holder">${holderText}</div>
+    ${pillHtml}
+    ${actionHtml}
+  `;
+  return el;
+}
+
+grid.addEventListener("click", e => {
+  const btn = e.target.closest("button[data-action]");
+  if(!btn) return;
+  const num = btn.dataset.num;
+  const action = btn.dataset.action;
+
+  if(!me){ askName(); return; }
+
+  const spotRef = db.ref("parking/spots/" + num);
+
+  spotRef.transaction(current => {
+    if(!current) return current;
+    if(action === "release"){
+      if(current.occupiedBy !== me) return current; // ya no es tuya, no hagas nada
+      return { ...current, free: true, occupiedBy: null };
+    }
+    if(action === "claim"){
+      if(!current.free) return current; // alguien se adelantó
+      return { ...current, free: false, occupiedBy: me };
+    }
+    return current;
+  });
+});
+
+/* Registro del service worker: permite instalar la app en el móvil
+   ("Añadir a pantalla de inicio") y que el interfaz cargue offline.
+   Los datos de las plazas siempre se leen en vivo desde Firebase. */
+if("serviceWorker" in navigator){
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register("service-worker.js").catch(err => {
+      console.warn("No se pudo registrar el service worker:", err);
+    });
+  });
+}
+</script>
+
+</body>
+</html>
