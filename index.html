@@ -229,6 +229,29 @@
     color: var(--muted); margin-bottom: 18px;
   }
 
+  .week-tabs{
+    display:flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin-bottom: 14px;
+  }
+  .week-tab{
+    padding: 8px 14px;
+    border-radius: 100px;
+    border: 1px solid rgba(238,236,230,.2);
+    background: transparent;
+    color: var(--muted);
+    font-family: 'Inter';
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  .week-tab.active{
+    background: var(--cone-orange);
+    border-color: var(--cone-orange);
+    color: #2a1206;
+  }
+
   .day-tabs{
     display:flex;
     gap: 6px;
@@ -278,7 +301,6 @@
       <div class="p-badge">P</div>
       <h1>Plazas de garaje<span>Cristina · Nacho · Sergio · Juanma · Ángela · Furgo</span></h1>
     </div>
-    <div class="week-tag" id="weekTag">SEMANA —</div>
   </header>
 
   <div class="me-bar">
@@ -288,11 +310,12 @@
 
   <div class="status-banner" id="connBanner">conectando…</div>
 
+  <div class="week-tabs" id="weekTabs"></div>
   <div class="day-tabs" id="dayTabs"></div>
 
   <div class="grid" id="grid"></div>
 
-  <footer>se reinicia automáticamente cada semana a las plazas por defecto</footer>
+  <footer>puedes planificar y liberar tu plaza hasta con 4 semanas de antelación</footer>
 </div>
 
 <div class="modal-overlay" id="modalOverlay">
@@ -340,22 +363,13 @@ const DEFAULT_SPOTS = [
 
 firebase.initializeApp(firebaseConfig);
 const db = firebase.database();
-const parkingRef = db.ref("parking");
+const daysRef = db.ref("parking/days");
 
-function isoWeekKey(date = new Date()){
-  const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
-  const dayNum = d.getUTCDay() || 7;
-  d.setUTCDate(d.getUTCDate() + 4 - dayNum);
-  const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
-  const weekNo = Math.ceil((((d - yearStart) / 86400000) + 1) / 7);
-  return `${d.getUTCFullYear()}-W${String(weekNo).padStart(2,'0')}`;
-}
-
-/* Fecha (YYYY-MM-DD) del lunes de la semana actual, en horario local */
-function mondayOfCurrentWeek(date = new Date()){
+/* Fecha (YYYY-MM-DD) del lunes de la semana actual + un desplazamiento en semanas, en horario local */
+function mondayOfWeek(weekOffset = 0, date = new Date()){
   const d = new Date(date.getFullYear(), date.getMonth(), date.getDate());
   const dayNum = d.getDay() || 7; // lunes=1 ... domingo=7
-  d.setDate(d.getDate() - (dayNum - 1));
+  d.setDate(d.getDate() - (dayNum - 1) + (weekOffset * 7));
   return d;
 }
 
@@ -365,10 +379,11 @@ function toDateKey(d){
 
 const DAY_LABELS = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"];
 const DAY_LABELS_SHORT = ["LUN", "MAR", "MIÉ", "JUE", "VIE", "SÁB", "DOM"];
+const WEEKS_VISIBLE = 4;
 
-/* Devuelve un array de 7 objetos {key, label, shortLabel, dateLabel} para la semana actual */
-function currentWeekDays(){
-  const monday = mondayOfCurrentWeek();
+/* Devuelve un array de 7 objetos {key, label, shortLabel, dateLabel} para la semana con ese desplazamiento (0 = esta semana) */
+function weekDays(weekOffset){
+  const monday = mondayOfWeek(weekOffset);
   const days = [];
   for(let i = 0; i < 7; i++){
     const d = new Date(monday);
@@ -383,18 +398,26 @@ function currentWeekDays(){
   return days;
 }
 
+/* Etiqueta corta para cada semana del selector, p.ej. "Esta semana" / "13–19 jul" */
+function weekLabel(weekOffset){
+  if(weekOffset === 0) return "Esta semana";
+  const monday = mondayOfWeek(weekOffset);
+  const sunday = new Date(monday); sunday.setDate(monday.getDate() + 6);
+  const fmt = d => `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}`;
+  return `${fmt(monday)}–${fmt(sunday)}`;
+}
+
+/* Todos los días de las WEEKS_VISIBLE semanas visibles, usado para inicializar/podar datos */
+function allVisibleDays(){
+  let all = [];
+  for(let w = 0; w < WEEKS_VISIBLE; w++) all = all.concat(weekDays(w));
+  return all;
+}
+
 function defaultSpotsObject(){
   const obj = {};
   DEFAULT_SPOTS.forEach(s => {
     obj[s.num] = { owner: s.owner, occupiedBy: s.owner, free: false };
-  });
-  return obj;
-}
-
-function defaultDaysObject(){
-  const obj = {};
-  currentWeekDays().forEach(day => {
-    obj[day.key] = { spots: defaultSpotsObject() };
   });
   return obj;
 }
@@ -426,56 +449,77 @@ document.getElementById("changeMeBtn").addEventListener("click", askName);
 
 if(!me){ askName(); } else { meLabel.textContent = me; closeModal(); }
 
-/* Asegura que exista el nodo y gestiona el reset semanal mediante transacción
-   (evita condiciones de carrera si varias personas abren la app a la vez).
-   Cada semana se generan los 7 días con las plazas por defecto. */
-function ensureWeekAndSpots(){
-  const currentWeek = isoWeekKey();
-  parkingRef.transaction(current => {
-    if(!current || current.week !== currentWeek || !current.days){
-      return { week: currentWeek, days: defaultDaysObject() };
-    }
-    return current; // sin cambios, ya está al día
+/* Crea los días que falten dentro de la ventana de 4 semanas visibles y elimina
+   los días anteriores a esta semana (para no acumular datos indefinidamente).
+   No toca los días ya existentes dentro de la ventana: si alguien ya liberó su
+   plaza para dentro de 3 semanas, ese cambio se conserva. */
+function ensureDaysWindow(){
+  const visible = allVisibleDays();
+  const visibleKeys = new Set(visible.map(d => d.key));
+
+  daysRef.transaction(current => {
+    const result = current ? { ...current } : {};
+    Object.keys(result).forEach(key => {
+      if(!visibleKeys.has(key)) delete result[key];
+    });
+    visible.forEach(day => {
+      if(!result[day.key]) result[day.key] = { spots: defaultSpotsObject() };
+    });
+    return result;
   });
 }
 
-ensureWeekAndSpots();
+ensureDaysWindow();
 
 /* Render */
 const grid = document.getElementById("grid");
+const weekTabsEl = document.getElementById("weekTabs");
 const dayTabsEl = document.getElementById("dayTabs");
-const weekTag = document.getElementById("weekTag");
 const connBanner = document.getElementById("connBanner");
 
+let selectedWeekOffset = 0;
 let selectedDayKey = null;
 
 db.ref(".info/connected").on("value", snap => {
   connBanner.textContent = snap.val() ? "sincronizado en tiempo real" : "sin conexión — reintentando…";
 });
 
-parkingRef.on("value", snapshot => {
+daysRef.on("value", snapshot => {
   const data = snapshot.val();
   if(!data) return;
+  renderAll(data);
+});
 
-  weekTag.textContent = "SEMANA " + (data.week || "—").replace("-W", " · ");
-
-  const days = currentWeekDays();
+function renderAll(data){
   const todayKey = toDateKey(new Date());
+  const days = weekDays(selectedWeekOffset);
 
-  // Si no hay día seleccionado o ya no existe en esta semana, elige hoy (si está en la lista) o el lunes
+  // Si no hay día seleccionado o ya no existe en la semana elegida, elige hoy (si aplica) o el lunes
   if(!selectedDayKey || !days.some(d => d.key === selectedDayKey)){
-    selectedDayKey = days.some(d => d.key === todayKey) ? todayKey : days[0].key;
+    selectedDayKey = (selectedWeekOffset === 0 && days.some(d => d.key === todayKey)) ? todayKey : days[0].key;
   }
 
+  renderWeekTabs();
   renderDayTabs(days, todayKey);
 
-  const daySpots = (data.days && data.days[selectedDayKey] && data.days[selectedDayKey].spots) || defaultSpotsObject();
+  const daySpots = (data[selectedDayKey] && data[selectedDayKey].spots) || defaultSpotsObject();
   grid.innerHTML = "";
   DEFAULT_SPOTS.forEach(defSpot => {
     const spot = daySpots[defSpot.num] || { owner: defSpot.owner, occupiedBy: defSpot.owner, free: false };
     grid.appendChild(renderSpot(defSpot.num, spot));
   });
-});
+}
+
+function renderWeekTabs(){
+  weekTabsEl.innerHTML = "";
+  for(let w = 0; w < WEEKS_VISIBLE; w++){
+    const btn = document.createElement("button");
+    btn.className = "week-tab" + (w === selectedWeekOffset ? " active" : "");
+    btn.dataset.week = w;
+    btn.textContent = weekLabel(w);
+    weekTabsEl.appendChild(btn);
+  }
+}
 
 function renderDayTabs(days, todayKey){
   dayTabsEl.innerHTML = "";
@@ -488,24 +532,27 @@ function renderDayTabs(days, todayKey){
   });
 }
 
+function refreshWithCurrentData(){
+  daysRef.once("value").then(snapshot => {
+    const data = snapshot.val();
+    if(!data) return;
+    renderAll(data);
+  });
+}
+
+weekTabsEl.addEventListener("click", e => {
+  const btn = e.target.closest(".week-tab");
+  if(!btn) return;
+  selectedWeekOffset = Number(btn.dataset.week);
+  selectedDayKey = null; // se recalcula en renderAll para esta semana
+  refreshWithCurrentData();
+});
+
 dayTabsEl.addEventListener("click", e => {
   const btn = e.target.closest(".day-tab");
   if(!btn) return;
   selectedDayKey = btn.dataset.key;
-  // Volvemos a pedir el snapshot actual para repintar con el nuevo día seleccionado
-  parkingRef.once("value").then(snapshot => {
-    const data = snapshot.val();
-    if(!data) return;
-    const days = currentWeekDays();
-    const todayKey = toDateKey(new Date());
-    renderDayTabs(days, todayKey);
-    const daySpots = (data.days && data.days[selectedDayKey] && data.days[selectedDayKey].spots) || defaultSpotsObject();
-    grid.innerHTML = "";
-    DEFAULT_SPOTS.forEach(defSpot => {
-      const spot = daySpots[defSpot.num] || { owner: defSpot.owner, occupiedBy: defSpot.owner, free: false };
-      grid.appendChild(renderSpot(defSpot.num, spot));
-    });
-  });
+  refreshWithCurrentData();
 });
 
 
@@ -551,7 +598,7 @@ grid.addEventListener("click", e => {
 
   // Si se libera la plaza de otra persona, pedimos confirmación para evitar toques accidentales
   if(action === "release" && btn.dataset.holder){
-    const dayLabel = currentWeekDays().find(d => d.key === selectedDayKey);
+    const dayLabel = weekDays(selectedWeekOffset).find(d => d.key === selectedDayKey);
     const ok = confirm(`¿Seguro que quieres liberar la plaza ${num} (${dayLabel ? dayLabel.label : ""}), asignada a ${btn.dataset.holder}?`);
     if(!ok) return;
   }
