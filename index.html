@@ -432,7 +432,7 @@ if(!me){ askName(); } else { meLabel.textContent = me; closeModal(); }
 function ensureWeekAndSpots(){
   const currentWeek = isoWeekKey();
   parkingRef.transaction(current => {
-    if(!current || current.week !== currentWeek){
+    if(!current || current.week !== currentWeek || !current.days){
       return { week: currentWeek, days: defaultDaysObject() };
     }
     return current; // sin cambios, ya está al día
