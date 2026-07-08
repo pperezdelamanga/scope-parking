@@ -399,7 +399,7 @@ function renderSpot(num, spot){
   } else {
     holderText = spot.occupiedBy;
     pillHtml = `<span class="status-pill occupied">ocupada</span>`;
-    actionHtml = `<button class="action btn-disabled" disabled>Ocupada</button>`;
+    actionHtml = `<button class="action btn-release" data-num="${num}" data-action="release" data-holder="${spot.occupiedBy}">Liberar plaza de ${spot.occupiedBy}</button>`;
   }
 
   el.innerHTML = `
@@ -420,12 +420,18 @@ grid.addEventListener("click", e => {
 
   if(!me){ askName(); return; }
 
+  // Si se libera la plaza de otra persona, pedimos confirmación para evitar toques accidentales
+  if(action === "release" && btn.dataset.holder){
+    const ok = confirm(`¿Seguro que quieres liberar la plaza ${num}, asignada a ${btn.dataset.holder}?`);
+    if(!ok) return;
+  }
+
   const spotRef = db.ref("parking/spots/" + num);
 
   spotRef.transaction(current => {
     if(!current) return current;
     if(action === "release"){
-      if(current.occupiedBy !== me) return current; // ya no es tuya, no hagas nada
+      if(current.free) return current; // ya estaba libre, nada que hacer
       return { ...current, free: true, occupiedBy: null };
     }
     if(action === "claim"){
