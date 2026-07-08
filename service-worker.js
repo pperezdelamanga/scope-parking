@@ -1,4 +1,4 @@
-const CACHE_NAME = "parking-app-v1";
+const CACHE_NAME = "parking-app-v2";
 const APP_SHELL = [
   "./",
   "./index.html",
@@ -26,6 +26,11 @@ self.addEventListener("activate", (event) => {
 // Solo gestionamos peticiones GET del mismo origen (el HTML, el manifest y los iconos).
 // Todo lo demás (Firebase, fuentes de Google, etc.) va directo a la red:
 // los datos de las plazas siempre deben ser en tiempo real, nunca cacheados.
+//
+// Estrategia "network-first": siempre intenta traer la versión más reciente
+// de la red primero. Solo usa la copia guardada en caché si no hay conexión.
+// Así, cualquier cambio que subas a GitHub se ve en el siguiente refresco,
+// sin quedar "atascado" en una versión antigua.
 self.addEventListener("fetch", (event) => {
   const req = event.request;
   const url = new URL(req.url);
@@ -35,14 +40,11 @@ self.addEventListener("fetch", (event) => {
   }
 
   event.respondWith(
-    caches.match(req).then((cached) => {
-      const network = fetch(req)
-        .then((res) => {
-          caches.open(CACHE_NAME).then((cache) => cache.put(req, res.clone()));
-          return res;
-        })
-        .catch(() => cached);
-      return cached || network;
-    })
+    fetch(req)
+      .then((res) => {
+        caches.open(CACHE_NAME).then((cache) => cache.put(req, res.clone()));
+        return res;
+      })
+      .catch(() => caches.match(req))
   );
 });
