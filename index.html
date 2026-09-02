@@ -313,7 +313,7 @@
   <header>
     <div class="title-block">
       <div class="p-badge">P</div>
-      <h1>Plaza garaje Scope</h1>
+      <h1>Plazas de garaje Scope</h1>
     </div>
   </header>
 
@@ -488,6 +488,34 @@ function ensureDaysWindow(){
 }
 
 ensureDaysWindow();
+
+/* Migración puntual: corrige la plaza 66 en los días que ya existían en la
+   base de datos antes de convertirla en "plaza para invitados" (antes era
+   la plaza fija de Nacho). Si seguía en su estado por defecto (ocupada por
+   "Nacho", nunca liberada), pasa a libre. Si alguien la ocupa legítimamente
+   ya como plaza de invitados, se respeta su reserva y solo se corrige la
+   etiqueta/nombre. */
+function migrateGuestSpot(){
+  daysRef.transaction(current => {
+    if(!current) return current;
+    const result = { ...current };
+    Object.keys(result).forEach(dateKey => {
+      const day = result[dateKey];
+      const spot66 = day && day.spots && day.spots["66"];
+      if(!spot66 || (spot66.owner === "Invitados" && spot66.guest)) return; // ya migrada
+
+      const wasStaleDefault = spot66.occupiedBy === "Nacho" && !spot66.free;
+      const newSpot66 = wasStaleDefault
+        ? { owner: "Invitados", guest: true, occupiedBy: "", free: true }
+        : { ...spot66, owner: "Invitados", guest: true };
+
+      result[dateKey] = { ...day, spots: { ...day.spots, "66": newSpot66 } };
+    });
+    return result;
+  });
+}
+
+migrateGuestSpot();
 
 /* Render */
 const grid = document.getElementById("grid");
