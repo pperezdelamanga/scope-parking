@@ -1,4 +1,4 @@
-const CACHE_NAME = "parking-app-v2";
+const CACHE_NAME = "parking-app-v4";
 const APP_SHELL = [
   "./",
   "./index.html",
@@ -42,7 +42,8 @@ self.addEventListener("fetch", (event) => {
   event.respondWith(
     fetch(req)
       .then((res) => {
-        caches.open(CACHE_NAME).then((cache) => cache.put(req, res.clone()));
+        const resClone = res.clone();
+        caches.open(CACHE_NAME).then((cache) => cache.put(req, resClone));
         return res;
       })
       .catch(() => caches.match(req))

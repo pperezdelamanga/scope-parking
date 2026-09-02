@@ -7,7 +7,7 @@
 
 <!-- PWA: instalación en móvil -->
 <link rel="manifest" href="manifest.json">
-<meta name="theme-color" content="#26282c">
+<meta name="theme-color" content="#17322f">
 <link rel="icon" href="icon-192.png" type="image/png">
 <link rel="apple-touch-icon" href="icon-192.png">
 <meta name="mobile-web-app-capable" content="yes">
@@ -20,15 +20,15 @@
 
 <style>
   :root{
-    --asphalt: #26282c;
-    --asphalt-light: #323539;
-    --asphalt-panel: #2e3034;
-    --line-white: #eeece6;
-    --line-yellow: #f4c430;
-    --free-green: #4c9a6a;
-    --free-green-glow: rgba(76,154,106,.35);
-    --cone-orange: #e0703a;
-    --muted: #9a9d9f;
+    --asphalt: #17322f;
+    --asphalt-light: #1f403c;
+    --asphalt-panel: #1c3b37;
+    --line-white: #f7f2ec;
+    --line-yellow: #4a9a91;
+    --free-green: #6bcab9;
+    --free-green-glow: rgba(107,202,185,.35);
+    --cone-orange: #e8622c;
+    --muted: #8fada7;
     --danger: #c2564f;
   }
 
@@ -43,6 +43,11 @@
     font-family: 'Inter', sans-serif;
     min-height:100vh;
     padding: 32px 20px 80px;
+    padding-top: calc(env(safe-area-inset-top, 0px) + 32px);
+  }
+
+  @media (max-width: 480px){
+    body{ padding-top: calc(env(safe-area-inset-top, 0px) + 48px); }
   }
 
   .wrap{ max-width: 980px; margin: 0 auto; }
@@ -62,13 +67,22 @@
 
   .p-badge{
     width:56px; height:56px;
-    border: 4px solid var(--line-yellow);
-    border-radius: 8px;
+    background: var(--line-white);
+    border-radius: 50%;
     display:flex; align-items:center; justify-content:center;
     font-family:'Bebas Neue', sans-serif;
-    font-size: 34px;
+    font-size: 32px;
     color: var(--line-yellow);
     flex-shrink:0;
+    position: relative;
+  }
+  .p-badge::after{
+    content:"";
+    position:absolute;
+    top: 12px; right: 14px;
+    width: 7px; height: 7px;
+    border-radius: 50%;
+    background: var(--cone-orange);
   }
 
   h1{
@@ -165,7 +179,7 @@
     letter-spacing: .5px;
   }
   .status-pill.occupied{ background: rgba(255,255,255,.08); color: var(--muted); }
-  .status-pill.free{ background: var(--free-green); color: #0d1a12; font-weight:700; box-shadow: 0 0 0 4px var(--free-green-glow); }
+  .status-pill.free{ background: var(--free-green); color: #0c2422; font-weight:700; box-shadow: 0 0 0 4px var(--free-green-glow); }
   .status-pill.mine{ background: var(--line-yellow); color: var(--asphalt); font-weight:700; }
 
   .spot button.action{
@@ -184,7 +198,7 @@
   .spot button.action:active{ transform: scale(.97); }
 
   .btn-release{ background: var(--cone-orange); color: #2a1206; }
-  .btn-claim{ background: var(--free-green); color: #0d1a12; }
+  .btn-claim{ background: var(--free-green); color: #0c2422; }
   .btn-disabled{ background: rgba(255,255,255,.06); color: var(--muted); cursor:not-allowed; }
 
   footer{
@@ -284,7 +298,7 @@
     font-family:'JetBrains Mono', monospace;
     font-size: 11px;
   }
-  .day-tab.today{ border-color: var(--line-yellow); }
+  .day-tab.today{ border-color: var(--cone-orange); }
   .day-tab.active{
     background: var(--line-yellow);
     border-color: var(--line-yellow);
@@ -299,7 +313,7 @@
   <header>
     <div class="title-block">
       <div class="p-badge">P</div>
-      <h1>Plazas de garaje<span>Cristina · Nacho · Sergio · Juanma · Ángela · Furgo</span></h1>
+      <h1>Plaza garaje Scope</h1>
     </div>
   </header>
 
@@ -352,7 +366,7 @@ const firebaseConfig = {
    ========================================================= */
 const DEFAULT_SPOTS = [
   { num: 65, owner: "Cristina" },
-  { num: 66, owner: "Nacho" },
+  { num: 66, owner: "Invitados", guest: true },
   { num: 69, owner: "Sergio" },
   { num: 70, owner: "Juanma" },
   { num: 78, owner: "Ángela" },
@@ -417,7 +431,11 @@ function allVisibleDays(){
 function defaultSpotsObject(){
   const obj = {};
   DEFAULT_SPOTS.forEach(s => {
-    obj[s.num] = { owner: s.owner, occupiedBy: s.owner, free: false };
+    if(s.guest){
+      obj[s.num] = { owner: s.owner, occupiedBy: "", free: true, guest: true };
+    } else {
+      obj[s.num] = { owner: s.owner, occupiedBy: s.owner, free: false };
+    }
   });
   return obj;
 }
@@ -505,7 +523,7 @@ function renderAll(data){
   const daySpots = (data[selectedDayKey] && data[selectedDayKey].spots) || defaultSpotsObject();
   grid.innerHTML = "";
   DEFAULT_SPOTS.forEach(defSpot => {
-    const spot = daySpots[defSpot.num] || { owner: defSpot.owner, occupiedBy: defSpot.owner, free: false };
+    const spot = daySpots[defSpot.num] || defaultSpotsObject()[defSpot.num];
     grid.appendChild(renderSpot(defSpot.num, spot));
   });
 }
@@ -579,7 +597,7 @@ function renderSpot(num, spot){
   }
 
   el.innerHTML = `
-    <div class="spot-owner-label">Plaza fija de ${spot.owner}</div>
+    <div class="spot-owner-label">${spot.guest ? "Plaza para invitados" : "Plaza fija de " + spot.owner}</div>
     <div class="spot-num">${num}</div>
     <div class="spot-holder">${holderText}</div>
     ${pillHtml}
